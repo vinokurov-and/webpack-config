@@ -5,9 +5,9 @@ const FaviconsWebpackPlugin = require("favicons-webpack-plugin");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const OptimizeCssAssetsPlugin = require("optimize-css-assets-webpack-plugin");
 const TerserWebpackPlugin = require("terser-webpack-plugin");
+const { BundleAnalyzerPlugin } = require("webpack-bundle-analyzer");
 
 const srcDir = "src";
-const filenameOutput = "[name].[hash]";
 
 const isDev = process.env.NODE_ENV === "development";
 const isProd = !isDev;
@@ -28,14 +28,70 @@ const optimization = () => {
   return config;
 };
 
+const filename = ext => (isDev ? `[name].${ext}` : `[name].[hash].${ext}`);
+
+const cssLoaders = extra => {
+  const loaders = [
+    {
+      loader: MiniCssExtractPlugin.loader,
+      options: {
+        hmr: isDev
+      }
+    },
+    "css-loader"
+  ];
+  if (extra) {
+    loaders.push(extra);
+  }
+  return loaders;
+};
+
+const jsLoaders = () => {
+  const loaders = [
+    {
+      loader: "babel-loader",
+      options: {
+        presets: ["@babel/preset-env"]
+      }
+    }
+  ];
+  if (isDev) {
+    loaders.push("eslint-loader");
+  }
+  return loaders;
+};
+
+const plugins = () => {
+  const base = [
+    new HTMLWebpackPlugin({
+      template: "./index.html",
+      minify: {
+        collapseWhitespace: isProd
+      }
+    }),
+    new CleanWebpackPlugin(),
+    new FaviconsWebpackPlugin(
+      path.resolve(__dirname, srcDir, "assets", "favicon.png")
+    ),
+    new MiniCssExtractPlugin({
+      filename: filename("css")
+    })
+  ];
+
+  if (isProd) {
+    base.push(new BundleAnalyzerPlugin());
+  }
+  return base;
+};
+
 module.exports = {
   context: path.resolve(__dirname, srcDir),
   mode: "development",
   entry: {
-    main: "./index.js"
+    main: ["@babel/polyfill", "./index.js"]
   },
   output: {
-    filename: `${filenameOutput}.js`,
+    filename: filename("js"),
     path: path.resolve(__dirname, "dist")
   },
   resolve: {
@@ -51,34 +107,17 @@ module.exports = {
     port: 3000,
     hot: isDev
   },
-  plugins: [
-    new HTMLWebpackPlugin({
-      template: "./index.html",
-      minify: {
-        collapseWhitespace: isProd
-      }
-    }),
-    new CleanWebpackPlugin(),
-    new FaviconsWebpackPlugin(
-      path.resolve(__dirname, srcDir, "assets", "favicon.png")
-    ),
-    new MiniCssExtractPlugin({
-      filename: `${filenameOutput}.css`
-    })
-  ],
+  devtool: isDev ? "source-map" : "",
+  plugins: plugins(),
   module: {
     rules: [
       {
         test: /\.css$/,
-        use: [
-          {
-            loader: MiniCssExtractPlugin.loader,
-            options: {
-              hmr: isDev
-            }
-          },
-          "css-loader"
-        ]
+        use: cssLoaders()
+      },
+      {
+        test: /\.s[ac]ss$/,
+        use: cssLoaders("sass-loader")
       },
       {
         test: /\.(png|svg|jpg|gif|webp|bmp)$/,
@@ -87,6 +126,11 @@ module.exports = {
       {
         test: /\.(ttf|woff|woff2|eot)$/,
         use: ["file-loader"]
+      },
+      {
+        test: /\.js$/,
+        exclude: /node-modules/,
+        loader: jsLoaders()
       }
     ]
   }
